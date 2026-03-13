@@ -311,13 +311,12 @@ func extractUsageByAPIType(usg map[string]any, objectType string) fwkrc.Usage {
 //
 // It extracts usage from events with type="response.completed".
 func extractUsageStreaming(responseText string) *fwkrc.Usage {
-	// Structure that handles both standard and ResponsesAPI formats
+
 	var streamResponse struct {
 		Usage *fwkrc.Usage `json:"usage"` // Standard format 
 		Response struct {
-			Usage  map[string]any `json:"usage"`
-			Object string         `json:"object"`
-		} `json:"response"` // ResponsesAPI format
+			Usage map[string]any `json:"usage"`
+		} `json:"response"`
 		Type string `json:"type"`
 	}
 
@@ -332,20 +331,19 @@ func extractUsageStreaming(responseText string) *fwkrc.Usage {
 		}
 
 		byteSlice := []byte(content)
+		// Standard ChatCompletion / vLLM usage format
+		if usage, _ := extractUsage(byteSlice); usage != nil {
+			return usage
+		}
+		// Responses API streaming format
 		if err := json.Unmarshal(byteSlice, &streamResponse); err != nil {
 			continue
 		}
-
-		// Check for standard format
-		if streamResponse.Usage != nil {
-			return streamResponse.Usage
+		if streamResponse.Response.Usage == nil || streamResponse.Type != "response.completed" {
+			continue
 		}
-
-		// Check for ResponsesAPI format (nested response.usage)
-		if streamResponse.Response.Usage != nil && streamResponse.Type == "response.completed" {
-			usage := extractUsageByAPIType(streamResponse.Response.Usage, streamResponse.Response.Object)
-			return &usage
-		}
+		usage := extractUsageByAPIType(streamResponse.Response.Usage, "")
+		return &usage
 	}
 	return nil
 }
